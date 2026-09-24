@@ -2,8 +2,8 @@ name: Price Watch
 
 on:
   schedule:
-    # 每小时跑一次（Jina 免费额度每月 1000 次，每小时约 720 次够用）
-    - cron: '*/10 9-23 * * *'
+    # 北京时间 9:00-23:00 每 10 分钟跑一次（GitHub cron 用 UTC，所以写 1-15）
+    - cron: '*/10 1-15 * * *'
   workflow_dispatch:
 
 concurrency:
