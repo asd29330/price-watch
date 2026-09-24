@@ -2,7 +2,8 @@ name: Price Watch
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # 每小时跑一次（Jina 免费额度每月 1000 次，每小时约 720 次够用）
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -21,3 +22,4 @@ jobs:
         run: python price_watch_cloud.py --once
         env:
           BARK_URL: ${{ secrets.BARK_URL }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
