@@ -2,11 +2,9 @@ name: Price Watch
 
 on:
   schedule:
-    # 每 5 分钟跑一次。仓库设为 Public（公共）时 GitHub 免费时长无上限，可放心用
     - cron: '*/5 * * * *'
-  workflow_dispatch: # 允许在 Actions 页面手动触发
+  workflow_dispatch:
 
-# 防止上一次还没跑完、下一次又堆积：只保留最新一轮
 concurrency:
   group: price-watch
   cancel-in-progress: true
@@ -19,15 +17,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: 缓存 Playwright 浏览器（省去每次重复下载，加快运行）
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-v1
-      - name: 安装依赖
-        run: |
-          pip install playwright playwright-stealth
-          python -m playwright install --with-deps chromium
       - name: 巡检一次并推送
         run: python price_watch_cloud.py --once
         env:
