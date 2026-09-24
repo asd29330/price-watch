@@ -1,0 +1,33 @@
+Enter file contents here
+name: Price Watch
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: price-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: cache playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-v1
+      - name: install deps
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: run once
+        run: python price_watch_cloud.py --once
+        env:
+          BARK_URL: ${{ secrets.BARK_URL }}
