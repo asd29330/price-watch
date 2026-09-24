@@ -26,7 +26,7 @@ jobs:
           key: ms-playwright-${{ runner.os }}-v1
       - name: 安装依赖
         run: |
-          pip install playwright
+          pip install playwright playwright-stealth
           python -m playwright install --with-deps chromium
       - name: 巡检一次并推送
         run: python price_watch_cloud.py --once
