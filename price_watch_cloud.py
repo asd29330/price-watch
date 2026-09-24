@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 
 # ============ 配置区 ============
-THRESHOLD   = 5.03
+THRESHOLD   = 5.04
 CHECK_EVERY = 300
 SERVERS     = ["女儿国", "花果山", "水帘洞"]
 
