@@ -133,10 +133,14 @@ def mark_push(site, room, price, state):
 def fetch_via_jina(url, timeout=60):
     """通过 Jina Reader 抓取页面，返回文本内容。"""
     jina_url = JINA_PREFIX + url
-    req = urllib.request.Request(jina_url, headers={
+    headers = {
         "User-Agent": UA,
         "X-Return-Format": "text",
-    })
+    }
+    api_key = os.environ.get("JINA_API_KEY", "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(jina_url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="ignore")
 
