@@ -60,6 +60,26 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_wat
 
 from playwright.sync_api import sync_playwright
 
+try:
+    from playwright_stealth import Stealth
+    _HAS_STEALTH = True
+except Exception:
+    _HAS_STEALTH = False
+
+
+def new_page(ctx):
+    page = ctx.new_page()
+    if _HAS_STEALTH:
+        try:
+            Stealth().apply_stealth_sync(page)
+        except Exception:
+            try:
+                from playwright_stealth import stealth_sync
+                stealth_sync(page)
+            except Exception:
+                pass
+    return page
+
 
 def parse_dd373(html):
     result = {}
@@ -161,15 +181,23 @@ def fetch_all(page):
     out = {}
     for site, url in URLS.items():
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(5000)
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(8000)
+            # 随机鼠标移动，更像真人
+            try:
+                page.mouse.move(300 + (hash(site) % 300), 200 + (hash(site) % 200))
+                page.wait_for_timeout(500)
+                page.mouse.move(500, 400)
+                page.wait_for_timeout(1000)
+            except Exception:
+                pass
             if site == "7881":
                 # 点「比例最好」让单价从低到高
                 try:
                     btn = page.get_by_text("比例最好", exact=True).first
-                    if btn.is_visible(timeout=2000):
+                    if btn.is_visible(timeout=3000):
                         btn.click()
-                        page.wait_for_timeout(4000)
+                        page.wait_for_timeout(5000)
                 except Exception:
                     pass
             html = page.content()
@@ -188,9 +216,17 @@ def run_once():
     hits = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            ctx = browser.new_context(user_agent=UA, locale="zh-CN")
-            page = ctx.new_page()
+            browser = p.chromium.launch(headless=True, args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ])
+            ctx = browser.new_context(
+                user_agent=UA,
+                locale="zh-CN",
+                viewport={"width": 1366, "height": 768},
+                timezone_id="Asia/Shanghai",
+            )
+            page = new_page(ctx)
             data = fetch_all(page)
             browser.close()
     except Exception as e:
