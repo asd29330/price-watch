@@ -16,9 +16,9 @@ import urllib.parse
 import urllib.request
 
 # ============ 配置区 ============
-THRESHOLD   = 4.95
+THRESHOLD   = 4.80
 CHECK_EVERY = 300
-SERVERS     = ["女儿国", "花果山", "水帘洞"，“三清山”，“云樱岛”]
+SERVERS     = ["女儿国", "花果山", "水帘洞"]
 
 BARK_URLS = [
     "https://api.day.app/在这里填你的Bark推送地址",
@@ -26,7 +26,7 @@ BARK_URLS = [
 # ================================
 
 URLS = {
-    "dd373": "https://www.dd373.com/s-xu9np3-0-0-0-wdxrj-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "dd373": "https://www.dd373.com/s-xu9np3-h3x9gf-0-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
     "7881":  "https://search.7881.com/G6065-100001-G6065P002-0-0.html?pageNum=1",
 }
 
@@ -40,34 +40,34 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_wat
 
 
 def parse_dd373(text):
+    """只取第一个商品（按比例最佳排序后的最低价），返回 {区服: 价格}。"""
     result = {}
-    for chunk in re.split(r"游戏区服", text)[1:]:
-        rm = re.search(r"黄金畅玩服[/／]\s*([^\s(（<]{1,6})", chunk)
-        pm = re.search(r"1万铜钱\s*=\s*([\d.]+)\s*元", chunk)
+    chunks = re.split(r"游戏区服", text)[1:]
+    for chunk in chunks:
+        rm = re.search(r"黄金畅玩服[/／]\s*([^\s(（<\n]{1,10})", chunk)
+        pm = re.search(r"1万铜钱\s*[=＝]\s*([\d.]+)\s*元", chunk)
         if not rm or not pm:
             continue
         room = rm.group(1).strip()
-        if room not in SERVERS:
-            continue
         price = float(pm.group(1))
-        if room not in result or price < result[room]:
-            result[room] = price
+        result[room] = price
+        break  # 只取第一个商品
     return result
 
 
 def parse_7881(text):
+    """只取第一个商品，返回 {区服: 价格}。"""
     result = {}
-    for chunk in re.split(r"游戏区服", text)[1:]:
-        rm = re.search(r"黄金畅玩服[/／]\s*([^\s(（<]{1,6})", chunk)
+    chunks = re.split(r"游戏区服", text)[1:]
+    for chunk in chunks:
+        rm = re.search(r"黄金畅玩服[/／]\s*([^\s(（<\n]{1,10})", chunk)
         pm = re.search(r"([\d.]+)\s*元/万铜钱", chunk)
         if not rm or not pm:
             continue
         room = rm.group(1).strip()
-        if room not in SERVERS:
-            continue
         price = float(pm.group(1))
-        if room not in result or price < result[room]:
-            result[room] = price
+        result[room] = price
+        break
     return result
 
 
