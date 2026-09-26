@@ -150,7 +150,7 @@ def run_once():
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n[{ts}] 巡检中...")
     hits = []
-        for i, (site, url) in enumerate(URLS.items()):
+    for i, (site, url) in enumerate(URLS.items()):
         try:
             if i > 0:
                 time.sleep(5)
