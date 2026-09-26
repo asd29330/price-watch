@@ -136,6 +136,7 @@ def fetch_via_jina(url, timeout=60):
     headers = {
         "User-Agent": UA,
         "X-Return-Format": "text",
+        "X-No-Cache": "true",
     }
     api_key = os.environ.get("JINA_API_KEY", "").strip()
     if api_key:
