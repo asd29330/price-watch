@@ -150,9 +150,15 @@ def run_once():
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n[{ts}] 巡检中...")
     hits = []
-    for site, url in URLS.items():
+        for i, (site, url) in enumerate(URLS.items()):
         try:
+            if i > 0:
+                time.sleep(5)
+          
             print(f"  [{site}] 通过 Jina Reader 抓取...")
+          
+            if site == "7881":
+                url = url + "&_t=" + str(int(time.time()))
             text = fetch_via_jina(url)
             # 调试：保存前 500 字看看抓到了什么
             preview = re.sub(r"\s+", " ", text)[:300]
