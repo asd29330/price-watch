@@ -170,7 +170,7 @@ def run_once():
                 line = "  ".join(f"{r} {v:.4f}" for r, v in sorted(low.items(), key=lambda x: x[1]))
                 print(f"  [{site}] {line}")
                 for room, price in low.items():
-                    if price < THRESHOLD:
+                    if price < THRESHOLD and room in SERVERS:
                         hits.append((site, room, price))
         except Exception as e:
             print(f"  [{site}] 抓取失败：{e}")
