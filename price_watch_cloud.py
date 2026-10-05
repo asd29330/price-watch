@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 
 # ============ 配置区 ============
-THRESHOLD   = 4.9
+THRESHOLD   = 5.03
 CHECK_EVERY = 300
 SERVERS     = ["女儿国", "花果山", "水帘洞", "三清山", "云樱岛", "白帝城", "桃花坞"]
 
@@ -40,7 +40,7 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_wat
 
 
 def parse_dd373(text):
-    """只取第一个商品（按比例最佳排序后的最低价），返回 {区服: 价格}。"""
+    """解析列表页所有商品，返回 {区服: 价格}。"""
     result = {}
     chunks = re.split(r"游戏区服", text)[1:]
     for chunk in chunks:
@@ -51,12 +51,11 @@ def parse_dd373(text):
         room = rm.group(1).strip()
         price = float(pm.group(1))
         result[room] = price
-        break  # 只取第一个商品
     return result
 
 
 def parse_7881(text):
-    """只取第一个商品，返回 {区服: 价格}。"""
+    """解析列表页所有商品，返回 {区服: 价格}。"""
     result = {}
     chunks = re.split(r"游戏区服", text)[1:]
     for chunk in chunks:
@@ -67,7 +66,6 @@ def parse_7881(text):
         room = rm.group(1).strip()
         price = float(pm.group(1))
         result[room] = price
-        break
     return result
 
 
@@ -149,7 +147,7 @@ def fetch_via_jina(url, timeout=60):
 def run_once():
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n[{ts}] 巡检中...")
-    hits = []
+    watched_prices = {}  # {区服: (站点, 价格)}
     for i, (site, url) in enumerate(URLS.items()):
         try:
             if i > 0:
@@ -163,33 +161,55 @@ def run_once():
             # 调试：保存前 500 字看看抓到了什么
             preview = re.sub(r"\s+", " ", text)[:300]
             print(f"  [{site}] 返回 {len(text)} 字，预览: {preview}")
-            low = PARSERS[site](text)
-            if not low:
+            prices = PARSERS[site](text)
+            if not prices:
                 print(f"  [{site}] 没解析到价格")
             else:
-                line = "  ".join(f"{r} {v:.4f}" for r, v in sorted(low.items(), key=lambda x: x[1]))
+                line = "  ".join(f"{r} {v:.4f}" for r, v in sorted(prices.items(), key=lambda x: x[1]))
                 print(f"  [{site}] {line}")
-                for room, price in low.items():
-                    if price < THRESHOLD and room in SERVERS:
-                        hits.append((site, room, price))
+                # 只保留监控列表里的区服
+                for room, price in prices.items():
+                    if room in SERVERS:
+                        # 如果这个区服在两个站点都有，保留更便宜的那个
+                        if room not in watched_prices or price < watched_prices[room][1]:
+                            watched_prices[room] = (site, price)
         except Exception as e:
             print(f"  [{site}] 抓取失败：{e}")
-    return hits
+    return watched_prices
 
 
-def handle_hits(hits, state):
-    if not hits:
+def handle_watched(watched_prices):
+    if not watched_prices:
+        print("  未抓到任何监控区服的价格")
         return
-    new_hits = [(s, r, v) for s, r, v in hits if mark_push(s, r, v, state)]
-    if not new_hits:
-        print("  命中但价格未创新低，跳过推送")
-        return
-    lines = [f"【{s}】{r}  1万铜钱 = {v:.4f} 元" for s, r, v in sorted(new_hits, key=lambda x: x[2])]
-    body = "\n".join(lines) + f"\n已跌破 {THRESHOLD} 元，快去买！"
-    print("!" * 44)
+    
+    # 按价格从低到高排序
+    sorted_rooms = sorted(watched_prices.items(), key=lambda x: x[1][1])
+    cheapest_room, (cheapest_site, cheapest_price) = sorted_rooms[0]
+    
+    # 构建通知内容
+    lines = [f"当前监控区服行情（共 {len(sorted_rooms)} 个有货）："]
+    below_count = 0
+    for room, (site, price) in sorted_rooms:
+        below = " ⚠️跌破阈值" if price < THRESHOLD else ""
+        if price < THRESHOLD:
+            below_count += 1
+        lines.append(f"【{site}】{room}  {price:.4f} 元{below}")
+    
+    lines.append(f"\n阈值：{THRESHOLD} 元")
+    body = "\n".join(lines)
+    
+    print("=" * 44)
     print(body)
-    print("!" * 44)
-    sent = bark_push("逆水寒铜钱到价啦", body)
+    print("=" * 44)
+    
+    # 如果有跌破阈值的，标题用告警样式，否则用普通行情样式
+    if below_count > 0:
+        title = "⚠️ 逆水寒铜钱到价啦"
+    else:
+        title = "逆水寒铜钱行情"
+    
+    sent = bark_push(title, body)
     print(f"  [已推送到 {sent} 台设备]")
 
 
@@ -202,16 +222,15 @@ def main():
     if not get_bark_urls():
         print("[警告] 尚未配置 Bark 推送地址！")
 
-    state = load_state()
     if args.once:
-        hits = run_once()
-        handle_hits(hits, state)
+        watched = run_once()
+        handle_watched(watched)
         return
 
     while True:
         try:
-            hits = run_once()
-            handle_hits(hits, state)
+            watched = run_once()
+            handle_watched(watched)
         except Exception as e:
             print(f"  [巡检异常] {e}")
         time.sleep(CHECK_EVERY)
