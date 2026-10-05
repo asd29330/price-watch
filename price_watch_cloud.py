@@ -25,10 +25,21 @@ BARK_URLS = [
 ]
 # ================================
 
-URLS = {
-    "dd373": "https://www.dd373.com/s-xu9np3-h3x9gf-0-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
-    "7881":  "https://search.7881.com/G6065-100001-G6065P002-0-0.html?pageNum=1",
+# dd373 各区服专属搜索链接（按区服筛选后的最低价排序页）
+DD373_SERVER_URLS = {
+    "女儿国": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-vxuhpf.html",
+    "花果山": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-nxc2tt.html",
+    "水帘洞": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-g0ra5g.html",
+    "三清山": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-0fqqtp.html",
+    "云樱岛": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-506c7t.html",
+    "白帝城": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-67nuq0.html",
+    "桃花坞": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-5uuvn9.html",
 }
+
+# 7881 暂时关闭（容易反爬）
+# URLS_7881 = {
+#     "7881":  "https://search.7881.com/G6065-100001-G6065P002-0-0.html?pageNum=1",
+# }
 
 # Jina Reader 前缀：把目标 URL 拼在后面即可
 JINA_PREFIX = "https://r.jina.ai/"
@@ -148,33 +159,37 @@ def run_once():
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n[{ts}] 巡检中...")
     watched_prices = {}  # {区服: (站点, 价格)}
-    for i, (site, url) in enumerate(URLS.items()):
+    
+    for idx, room in enumerate(SERVERS):
         try:
-            if i > 0:
-                time.sleep(5)
-          
-            print(f"  [{site}] 通过 Jina Reader 抓取...")
-          
-            if site == "7881":
-                url = url + "&_t=" + str(int(time.time()))
+            if idx > 0:
+                time.sleep(3)  # 每个区服之间间隔3秒，避免被反爬
+            
+            url = DD373_SERVER_URLS.get(room)
+            if not url:
+                print(f"  [{room}] 未配置搜索链接，跳过")
+                continue
+            
+            print(f"  [dd373] 抓取 {room}...")
             text = fetch_via_jina(url)
-            # 调试：保存前 500 字看看抓到了什么
-            preview = re.sub(r"\s+", " ", text)[:300]
-            print(f"  [{site}] 返回 {len(text)} 字，预览: {preview}")
-            prices = PARSERS[site](text)
+            
+            # 调试：预览前 200 字
+            preview = re.sub(r"\s+", " ", text)[:200]
+            print(f"  [{room}] 返回 {len(text)} 字，预览: {preview}")
+            
+            prices = parse_dd373(text)
             if not prices:
-                print(f"  [{site}] 没解析到价格")
-            else:
-                line = "  ".join(f"{r} {v:.4f}" for r, v in sorted(prices.items(), key=lambda x: x[1]))
-                print(f"  [{site}] {line}")
-                # 只保留监控列表里的区服
-                for room, price in prices.items():
-                    if room in SERVERS:
-                        # 如果这个区服在两个站点都有，保留更便宜的那个
-                        if room not in watched_prices or price < watched_prices[room][1]:
-                            watched_prices[room] = (site, price)
+                print(f"  [{room}] 没解析到价格")
+                continue
+            
+            # 这个页面就是这个区服的，取第一个商品的最低价
+            first_room, price = next(iter(prices.items()))
+            print(f"  [{room}] 最低价: {price:.4f} 元/万铜钱")
+            watched_prices[room] = ("dd373", price)
+            
         except Exception as e:
-            print(f"  [{site}] 抓取失败：{e}")
+            print(f"  [{room}] 抓取失败：{e}")
+    
     return watched_prices
 
 
