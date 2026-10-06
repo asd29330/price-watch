@@ -25,15 +25,15 @@ BARK_URLS = [
 ]
 # ================================
 
-# dd373 各区服专属搜索链接（按区服筛选后的最低价排序页）
+# dd373 各区服专属搜索链接（比例最佳排序，最低价优先）
 DD373_SERVER_URLS = {
-    "女儿国": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-vxuhpf.html",
-    "花果山": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-nxc2tt.html",
-    "水帘洞": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-g0ra5g.html",
-    "三清山": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-0fqqtp.html",
-    "云樱岛": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-506c7t.html",
-    "白帝城": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-67nuq0.html",
-    "桃花坞": "https://www.dd373.com/s-xu9np3-c-wdxrjj-h3x9gf-5uuvn9.html",
+    "女儿国": "https://www.dd373.com/s-xu9np3-h3x9gf-vxuhpf-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "花果山": "https://www.dd373.com/s-xu9np3-h3x9gf-nxc2tt-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "水帘洞": "https://www.dd373.com/s-xu9np3-h3x9gf-g0ra5g-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "三清山": "https://www.dd373.com/s-xu9np3-h3x9gf-0fqqtp-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "云樱岛": "https://www.dd373.com/s-xu9np3-h3x9gf-506c7t-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "白帝城": "https://www.dd373.com/s-xu9np3-h3x9gf-67nuq0-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "桃花坞": "https://www.dd373.com/s-xu9np3-h3x9gf-5uuvn9-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
 }
 
 # 7881 暂时关闭（容易反爬）
