@@ -51,12 +51,15 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_wat
 
 
 def parse_dd373(text):
-    """解析列表页所有商品，返回 {区服: 价格}。"""
+    """解析列表页所有商品，返回 {区服: 价格}。兼容两种价格格式：1万铜钱=X元 / X元/万铜钱"""
     result = {}
     chunks = re.split(r"游戏区服", text)[1:]
     for chunk in chunks:
         rm = re.search(r"黄金畅玩服[/／]\s*([^\s(（<\n]{1,10})", chunk)
+        # 兼容两种价格格式
         pm = re.search(r"1万铜钱\s*[=＝]\s*([\d.]+)\s*元", chunk)
+        if not pm:
+            pm = re.search(r"([\d.]+)\s*元/万铜钱", chunk)
         if not rm or not pm:
             continue
         room = rm.group(1).strip()
