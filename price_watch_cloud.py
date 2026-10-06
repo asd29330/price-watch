@@ -180,13 +180,22 @@ def run_once():
             preview = re.sub(r"\s+", " ", text)[:200]
             print(f"  [{room}] 返回 {len(text)} 字，预览: {preview}")
             
-            prices = parse_dd373(text)
-            if not prices:
+            # 直接找第一个商品的价格（按比例最佳排序后第一个就是最低价）
+            price = None
+            chunks = re.split(r"游戏区服", text)[1:]
+            for chunk in chunks:
+                # 兼容两种价格格式
+                pm = re.search(r"1万铜钱\s*[=＝]\s*([\d.]+)\s*元", chunk)
+                if not pm:
+                    pm = re.search(r"([\d.]+)\s*元/万铜钱", chunk)
+                if pm:
+                    price = float(pm.group(1))
+                    break  # 找到第一个就停，后面的都是更贵的
+            
+            if not price:
                 print(f"  [{room}] 没解析到价格")
                 continue
             
-            # 这个页面就是这个区服的，取第一个商品的最低价
-            first_room, price = next(iter(prices.items()))
             print(f"  [{room}] 最低价: {price:.4f} 元/万铜钱")
             watched_prices[room] = ("dd373", price)
             
