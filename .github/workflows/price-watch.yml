@@ -17,17 +17,19 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+    - name: 安装 Playwright
+      run: |
+        pip install playwright
+        playwright install chromium --with-deps
     - name: 巡检一次并推送
       run: python price_watch_cloud.py --once
       env:
         BARK_URL: ${{ secrets.BARK_URL }}
-        JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
     - name: 提交状态文件
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "github-actions[bot]"
         git add -A
         git diff --staged --quiet || git commit -m "update price state [skip ci]"
-        
         git pull --rebase origin main || echo "no remote changes to merge"
         git push
