@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 逆水寒黄金畅玩服 铜钱价格盯价脚本（GitHub Actions + Bark 推送版）
-直接 requests 抓取 dd373 列表页（不再依赖 Jina Reader，已修复反爬问题）。
+- dd373: 直接 requests 抓取
+- 7881: Playwright 无头浏览器渲染后抓取（API 有签名校验，不能直接请求）
 """
 
 import argparse
@@ -37,33 +38,36 @@ DD373_SERVER_URLS = {
     "桃花坞": "https://www.dd373.com/s-xu9np3-h3x9gf-5uuvn9-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
 }
 
+# 7881 各区服 serverId（从页面 JS 配置中提取）
+SERVER_7881_IDS = {
+    "三清山": "G6065P002001",
+    "桃花坞": "G6065P002002",
+    "白帝城": "G6065P002003",
+    "云樱岛": "G6065P002004",
+    "花果山": "G6065P002005",
+    "水帘洞": "G6065P002006",
+    "女儿国": "G6065P002007",
+}
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_watch_state.json")
 
 
+# ============ dd373 抓取（直接 requests） ============
+
 def parse_dd373(html):
-    """
-    从 dd373 HTML 列表页解析最低单价（元/万铜钱）。
-    商品标题格式: "60万铜钱=300.00元" → 300/60 = 5.00 元/万铜钱
-    页面已按价格排序，取第一个匹配的即可。
-    返回: (最低价, 总商品数) 或 (None, 0)
-    """
-    # 按商品 item 分割
+    """从 dd373 HTML 解析最低单价（元/万铜钱），返回 (最低价, 商品数) 或 (None, 0)"""
     items = re.split(r'<div class="goods-list-item">', html)[1:]
     if not items:
         return None, 0
-
     prices = []
     for item in items:
-        # 提取标题
         title_m = re.search(r'goods-list-title[^>]*>.*?<div[^>]*>(.*?)</div>', item, re.DOTALL)
         if not title_m:
             continue
         title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
-
-        # 匹配 "X万铜钱=Y元" 或 "X万铜钱＝Y元"
         pm = re.search(r'([\d.]+)万铜钱\s*[=＝]\s*([\d,.]+)\s*元', title)
         if not pm:
             continue
@@ -72,11 +76,92 @@ def parse_dd373(html):
         if amount_wan <= 0:
             continue
         prices.append(total_price / amount_wan)
-
     if not prices:
         return None, 0
     return min(prices), len(prices)
 
+
+def fetch_direct(url, timeout=15):
+    """直接请求，带浏览器 UA 和 gzip 解压。"""
+    headers = {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Accept-Encoding": "gzip",
+        "Referer": "https://www.dd373.com/",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read()
+        if resp.headers.get("Content-Encoding") == "gzip":
+            data = gzip.decompress(data)
+        return data.decode("utf-8", errors="ignore")
+
+
+# ============ 7881 抓取（Playwright） ============
+
+def fetch_7881_all(rooms):
+    """
+    用 Playwright 无头浏览器抓取 7881 所有区服价格。
+    返回 {区服: 最低价}。如果 Playwright 不可用，返回空字典。
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  [7881] playwright 未安装，跳过 7881 监测")
+        return {}
+
+    result = {}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+        context = browser.new_context(
+            user_agent=UA,
+            locale="zh-CN",
+            viewport={"width": 1280, "height": 800},
+        )
+
+        for room in rooms:
+            server_id = SERVER_7881_IDS.get(room)
+            if not server_id:
+                continue
+            url = f"https://search.7881.com/G6065-100001-G6065P002-{server_id}-0.html?pageNum=1"
+            page = context.new_page()
+            try:
+                page.goto(url, timeout=20000, wait_until="networkidle")
+                page.wait_for_selector("text=元/万铜钱", timeout=10000)
+                time.sleep(1)
+
+                prices = page.evaluate("""
+                    () => {
+                        const all = document.querySelectorAll('*');
+                        const prices = [];
+                        for (const el of all) {
+                            const text = el.textContent || '';
+                            const m = text.match(/([\\d.]+)元\\/万铜钱/);
+                            if (m && el.children.length < 3) {
+                                prices.push(parseFloat(m[1]));
+                            }
+                        }
+                        return prices;
+                    }
+                """)
+
+                if prices:
+                    result[room] = min(prices)
+                    print(f"  [7881] {room}: 最低价 {min(prices):.4f} 元/万铜钱（{len(prices)}条）")
+                else:
+                    print(f"  [7881] {room}: 未抓到价格")
+            except Exception as e:
+                print(f"  [7881] {room}: 抓取失败 - {e}")
+            finally:
+                page.close()
+            time.sleep(1)
+
+        browser.close()
+    return result
+
+
+# ============ 推送与状态 ============
 
 def get_bark_urls():
     urls = []
@@ -124,83 +209,59 @@ def save_state(state):
         print(f"  [状态保存失败] {e}")
 
 
-def mark_push(site, room, price, state):
-    key = f"{site}|{room}"
-    prev = state.get(key)
-    if prev is not None and float(prev) <= price:
-        return False
-    state[key] = price
-    save_state(state)
-    return True
-
-
-def fetch_direct(url, timeout=15):
-    """直接请求 dd373 原站，带浏览器 UA 和 gzip 解压。替代 Jina Reader。"""
-    headers = {
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-        "Accept-Encoding": "gzip",
-        "Referer": "https://www.dd373.com/",
-    }
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
-        if resp.headers.get("Content-Encoding") == "gzip":
-            data = gzip.decompress(data)
-        return data.decode("utf-8", errors="ignore")
-
+# ============ 主流程 ============
 
 def run_once():
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n[{ts}] 巡检中...")
-    watched_prices = {}  # {区服: (站点, 价格)}
+    watched_prices = {}
 
+    # --- dd373 ---
+    print("  --- dd373 ---")
     for idx, room in enumerate(SERVERS):
         try:
             if idx > 0:
-                time.sleep(3)  # 每个区服之间间隔3秒，避免被反爬
-
+                time.sleep(3)
             url = DD373_SERVER_URLS.get(room)
             if not url:
-                print(f"  [{room}] 未配置搜索链接，跳过")
                 continue
-
             print(f"  [dd373] 抓取 {room}...")
             html = fetch_direct(url)
-
             price, count = parse_dd373(html)
-
             if not price:
-                print(f"  [{room}] 没解析到价格（页面 {len(html)} 字, 商品 {count} 个）")
+                print(f"  [dd373] {room}: 未抓到价格")
                 continue
-
-            print(f"  [{room}] 最低价: {price:.4f} 元/万铜钱（共 {count} 个商品）")
-            watched_prices[room] = ("dd373", price)
-
+            print(f"  [dd373] {room}: {price:.4f} 元/万铜钱（{count}条）")
+            watched_prices[f"{room}"] = ("dd373", price)
         except Exception as e:
-            print(f"  [{room}] 抓取失败：{e}")
+            print(f"  [dd373] {room}: 抓取失败 - {e}")
+
+    # --- 7881 ---
+    print("  --- 7881 ---")
+    try:
+        prices_7881 = fetch_7881_all(SERVERS)
+        for room, price in prices_7881.items():
+            watched_prices[f"{room}"] = ("7881", price)
+    except Exception as e:
+        print(f"  [7881] 整体失败 - {e}")
 
     return watched_prices
 
 
 def handle_watched(watched_prices):
     if not watched_prices:
-        print("  未抓到任何监控区服的价格")
+        print("  未抓到任何价格")
         return
 
-    # 按价格从低到高排序
-    sorted_rooms = sorted(watched_prices.items(), key=lambda x: x[1][1])
-    cheapest_room, (cheapest_site, cheapest_price) = sorted_rooms[0]
+    sorted_items = sorted(watched_prices.items(), key=lambda x: x[1][1])
 
-    # 构建通知内容
-    lines = [f"当前监控区服行情（共 {len(sorted_rooms)} 个有货）："]
+    lines = [f"当前行情（共 {len(sorted_items)} 条报价）："]
     below_count = 0
-    for room, (site, price) in sorted_rooms:
+    for label, (site, price) in sorted_items:
         below = " ⚠️跌破阈值" if price < THRESHOLD else ""
         if price < THRESHOLD:
             below_count += 1
-        lines.append(f"【{site}】{room}  {price:.4f} 元{below}")
+        lines.append(f"【{site}】{label}  {price:.4f} 元{below}")
 
     lines.append(f"\n阈值：{THRESHOLD} 元")
     body = "\n".join(lines)
@@ -209,7 +270,6 @@ def handle_watched(watched_prices):
     print(body)
     print("=" * 44)
 
-    # 如果有跌破阈值的，标题用告警样式，否则用普通行情样式
     if below_count > 0:
         title = "⚠️ 逆水寒铜钱到价啦"
     else:
