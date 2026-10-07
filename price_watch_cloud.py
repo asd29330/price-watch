@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 
 # ============ 配置区 ============
-THRESHOLD   = 4.85
+THRESHOLD   = 4.80
 CHECK_EVERY = 300
 SERVERS     = ["女儿国", "花果山", "水帘洞", "三清山", "云樱岛", "白帝城", "桃花坞"]
 
