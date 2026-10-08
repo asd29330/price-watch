@@ -196,11 +196,39 @@ def fetch_qiandao_all(rooms):
                         print(f"  [千岛] 当前就在 {room}，直接抓价格")
                     else:
                         print(f"  [千岛] 切换到 {room}...")
-                        # 第一步：点击顶部当前区服，打开下拉菜单（只找可见的，不点隐藏的下拉选项）
-                        page.get_by_text(current_room, exact=True).locator("visible=true").first.click(timeout=5000)
+                        # 第一步：点击顶部当前区服（不在下拉容器里的那个），打开下拉菜单
+                        page.evaluate(f"""
+                            () => {{
+                                const all = document.querySelectorAll('*');
+                                for (const el of all) {{
+                                    if (el.textContent.trim() === '{current_room}' && el.children.length === 0) {{
+                                        // 排除掉下拉菜单里的元素
+                                        if (!el.closest('.n-base-selection-overlay, [class*="selection-overlay"]')) {{
+                                            el.click();
+                                            return true;
+                                        }}
+                                    }}
+                                }}
+                                return false;
+                            }}
+                        """)
                         time.sleep(1)
-                        # 第二步：在下拉菜单里点击目标区服（这时候下拉是打开的，目标区服是可见的）
-                        page.get_by_text(room, exact=True).locator("visible=true").first.click(timeout=5000)
+                        # 第二步：在下拉菜单容器里点击目标区服
+                        page.evaluate(f"""
+                            () => {{
+                                const overlays = document.querySelectorAll('.n-base-selection-overlay, [class*="selection-overlay"]');
+                                for (const overlay of overlays) {{
+                                    const items = overlay.querySelectorAll('*');
+                                    for (const item of items) {{
+                                        if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
+                                            item.click();
+                                            return true;
+                                        }}
+                                    }}
+                                }}
+                                return false;
+                            }}
+                        """)
                         time.sleep(3)  # 等待价格加载
                         current_room = room
 
