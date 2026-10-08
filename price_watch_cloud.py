@@ -335,16 +335,16 @@ def run_once():
     # except Exception as e:
     #     print(f"  [7881] 整体失败 - {e}")
 
-    # --- 千岛 ---
-    print("  --- 千岛 ---")
-    try:
-        prices_qiandao = fetch_qiandao_all(SERVERS)
-        for room, price in prices_qiandao.items():
-            # 如果千岛价格更便宜，或者 dd373 没抓到，就更新
-            if room not in watched_prices or price < watched_prices[room][1]:
-                watched_prices[room] = ("千岛", price)
-    except Exception as e:
-        print(f"  [千岛] 整体失败 - {e}")
+    # --- 千岛 暂时关闭（API 升级了请求签名校验，裸 POST 返回 405，需逆向 skey 签名）---
+    # print("  --- 千岛 ---")
+    # try:
+    #     prices_qiandao = fetch_qiandao_all(SERVERS)
+    #     for room, price in prices_qiandao.items():
+    #         # 如果千岛价格更便宜，或者 dd373 没抓到，就更新
+    #         if room not in watched_prices or price < watched_prices[room][1]:
+    #             watched_prices[room] = ("千岛", price)
+    # except Exception as e:
+    #     print(f"  [千岛] 整体失败 - {e}")
 
     return watched_prices
 
