@@ -160,11 +160,12 @@ def fetch_7881_all(rooms):
     return result
 
 
-# ============ 千岛抓取（API直接请求，不用Playwright） ============
+# ============ 千岛抓取（Playwright + 登录态） ============
 
 QIandAO_API_URL = "https://api.qiandao.com/c2c-web/v1/currency/spu-list-v2"
 QIandAO_SPU_ID = "1019270210852537580"
 QIandAO_ATTR_KEY = "904221228984762040"
+QIandAO_STORAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qiandao_storage_state.json")
 
 # 区服名 -> API 里的 value
 QIandAO_ROOM_IDS = {
@@ -178,76 +179,106 @@ QIandAO_ROOM_IDS = {
 }
 
 
-def fetch_qiandao_all(rooms):
+def fetch_qiandao_playwright(rooms):
     """
-    直接调用千岛API抓取所有区服价格。
+    用 Playwright 加载登录态（qiandao_storage_state.json），在页面上下文里调 API。
+    登录态由 qiandao_login.py 本地扫码生成。
     返回 {区服: 最低价}。
     """
-    import json
+    if not os.path.exists(QIandAO_STORAGE):
+        print("  [千岛] 未找到 qiandao_storage_state.json，请先本地运行 qiandao_login.py 登录")
+        return {}
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  [千岛] playwright 未安装，跳过")
+        return {}
+
     result = {}
-    headers = {
-        "User-Agent": UA,
-        "Content-Type": "application/json",
-        "Referer": "https://qiandao.com/",
-        "Origin": "https://qiandao.com",
-    }
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+        context = browser.new_context(
+            storage_state=QIandAO_STORAGE,
+            user_agent=UA,
+            locale="zh-CN",
+            viewport={"width": 1280, "height": 800},
+        )
+        page = context.new_page()
 
-    for room in rooms:
-        if room not in QIandAO_ROOM_IDS:
-            print(f"  [千岛] {room}: 未配置ID，跳过")
-            continue
+        # 先打开千岛主页，建立 origin 和 cookie 上下文
         try:
-            room_id = QIandAO_ROOM_IDS[room]
-            payload = {
-                "spuId": QIandAO_SPU_ID,
-                "offset": 0,
-                "limit": 20,
-                "filters": [{
-                    "key": QIandAO_ATTR_KEY,
-                    "keyType": "ATTRIBUTE",
-                    "filterOperType": "EQ",
-                    "isNot": False,
-                    "selectedQueryValue": {
-                        "candidateType": "SINGLE_VALUE",
-                        "candidateValues": [{"label": room, "value": room_id}]
-                    }
-                }],
-                "sortBy": "BEST_RATIO"
-            }
-            req = urllib.request.Request(
-                QIandAO_API_URL,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            page.goto("https://www.qiandao.com/", wait_until="domcontentloaded", timeout=20000)
+            time.sleep(2)
+        except Exception:
+            pass
 
-            # 从返回里提取商品列表
-            items = data.get("data", {}).get("list", [])
-            if not items:
-                print(f"  [千岛] {room}: 无在售商品")
+        for room in rooms:
+            if room not in QIandAO_ROOM_IDS:
                 continue
+            room_id = QIandAO_ROOM_IDS[room]
+            try:
+                # 在页面上下文里发 fetch（自动带 cookie 和 origin）
+                data = page.evaluate("""async ({apiUrl, spuId, attrKey, room, roomId}) => {
+                    const payload = {
+                        spuId: spuId,
+                        offset: 0, limit: 20,
+                        filters: [{
+                            key: attrKey, keyType: "ATTRIBUTE",
+                            filterOperType: "EQ", isNot: false,
+                            selectedQueryValue: {
+                                candidateType: "SINGLE_VALUE",
+                                candidateValues: [{label: room, value: roomId}]
+                            }
+                        }],
+                        sortBy: "BEST_RATIO"
+                    };
+                    const resp = await fetch(apiUrl, {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(payload),
+                        credentials: "include"
+                    });
+                    return {status: resp.status, body: await resp.text()};
+                }""", {
+                    "apiUrl": QIandAO_API_URL,
+                    "spuId": QIandAO_SPU_ID,
+                    "attrKey": QIandAO_ATTR_KEY,
+                    "room": room,
+                    "roomId": room_id,
+                })
 
-            # 第一个商品就是比例最佳的最低价
-            # 价格字段应该是 price 或者 unitPrice，单位是元/万币
-            min_price = None
-            for item in items:
-                # 看看价格在哪个字段里
-                price = item.get("price") or item.get("unitPrice") or item.get("minPrice")
-                if price:
-                    min_price = float(price) / 100 if price > 1000 else float(price)  # 可能是分为单位
-                    break
+                if data["status"] != 200:
+                    print(f"  [千岛] {room}: HTTP {data['status']} - {data['body'][:120]}")
+                    continue
 
-            if min_price:
-                result[room] = min_price
-                print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(items)}条在售）")
-            else:
-                print(f"  [千岛] {room}: 未找到价格字段，返回字段: {list(items[0].keys())}")
+                resp_data = json.loads(data["body"])
+                items = resp_data.get("data", {}).get("list", [])
+                if not items:
+                    print(f"  [千岛] {room}: 无在售商品")
+                    continue
 
-        except Exception as e:
-            print(f"  [千岛] {room}: 抓取失败 - {e}")
+                # 从商品列表提取最低价
+                prices = []
+                for item in items:
+                    price = item.get("price") or item.get("unitPrice") or item.get("minPrice")
+                    if price:
+                        prices.append(float(price) / 100 if float(price) > 1000 else float(price))
 
+                if prices:
+                    min_price = min(prices)
+                    result[room] = min_price
+                    print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(items)}条在售）")
+                else:
+                    print(f"  [千岛] {room}: 未找到价格字段，字段: {list(items[0].keys())}")
+
+            except Exception as e:
+                print(f"  [千岛] {room}: 抓取失败 - {e}")
+
+            time.sleep(1)
+
+        context.close()
+        browser.close()
     return result
 
 
@@ -335,16 +366,15 @@ def run_once():
     # except Exception as e:
     #     print(f"  [7881] 整体失败 - {e}")
 
-    # --- 千岛 暂时关闭（API 升级了请求签名校验，裸 POST 返回 405，需逆向 skey 签名）---
-    # print("  --- 千岛 ---")
-    # try:
-    #     prices_qiandao = fetch_qiandao_all(SERVERS)
-    #     for room, price in prices_qiandao.items():
-    #         # 如果千岛价格更便宜，或者 dd373 没抓到，就更新
-    #         if room not in watched_prices or price < watched_prices[room][1]:
-    #             watched_prices[room] = ("千岛", price)
-    # except Exception as e:
-    #     print(f"  [千岛] 整体失败 - {e}")
+    # --- 千岛（Playwright + 登录态） ---
+    print("  --- 千岛 ---")
+    try:
+        prices_qiandao = fetch_qiandao_playwright(SERVERS)
+        for room, price in prices_qiandao.items():
+            if room not in watched_prices or price < watched_prices[room][1]:
+                watched_prices[room] = ("千岛", price)
+    except Exception as e:
+        print(f"  [千岛] 整体失败 - {e}")
 
     return watched_prices
 
