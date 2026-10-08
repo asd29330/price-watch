@@ -127,9 +127,8 @@ def fetch_7881_all(rooms):
             url = f"https://search.7881.com/G6065-100001-G6065P002-{server_id}-0.html?pageNum=1"
             page = context.new_page()
             try:
-                page.goto(url, timeout=20000, wait_until="networkidle")
-                page.wait_for_selector("text=元/万铜钱", timeout=10000)
-                time.sleep(1)
+                page.goto(url, timeout=30000, wait_until="networkidle")
+                time.sleep(3)  # 多等3秒让价格加载出来
 
                 prices = page.evaluate("""
                     () => {
