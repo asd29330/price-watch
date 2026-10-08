@@ -189,42 +189,20 @@ def fetch_qiandao_all(rooms):
             page.goto(QIandAO_URL, timeout=60000, wait_until="domcontentloaded")
             time.sleep(5)  # 多等5秒让价格渲染出来
 
+            current_room = "三清山"  # 页面默认打开就是三清山
             for room in rooms:
                 try:
-                    print(f"  [千岛] 切换到 {room}...")
-                    # 先打开区服下拉菜单（点击顶部的区服选择器）
-                    page.evaluate("""
-                        () => {
-                            // 找到顶部显示当前区服的选择器按钮并点击
-                            const selectors = document.querySelectorAll('.n-base-selection, [class*="selection"]');
-                            for (const el of selectors) {
-                                if (el.textContent.trim().length < 10 && el.querySelector('input, .n-base-selection__placeholder, .n-base-selection__value')) {
-                                    el.click();
-                                    return true;
-                                }
-                            }
-                            return false;
-                        }
-                    """)
-                    time.sleep(1)
-                    
-                    # 在下拉菜单里点击对应的区服
-                    page.evaluate(f"""
-                        () => {{
-                            const overlays = document.querySelectorAll('.n-base-selection-overlay__wrapper, [class*="selection-overlay"]');
-                            for (const overlay of overlays) {{
-                                const items = overlay.querySelectorAll('*');
-                                for (const item of items) {{
-                                    if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
-                                        item.click();
-                                        return true;
-                                    }}
-                                }}
-                            }}
-                            return false;
-                        }}
-                    """)
-                    time.sleep(3)  # 等待价格加载
+                    if room == current_room:
+                        print(f"  [千岛] 当前就在 {room}，直接抓价格")
+                    else:
+                        print(f"  [千岛] 切换到 {room}...")
+                        # 第一步：点击顶部当前区服，打开下拉菜单
+                        page.get_by_text(current_room, exact=True).first.click(timeout=5000)
+                        time.sleep(1)
+                        # 第二步：在下拉菜单里点击目标区服
+                        page.get_by_text(room, exact=True).first.click(timeout=5000)
+                        time.sleep(3)  # 等待价格加载
+                        current_room = room
 
                     # 提取所有价格
                     prices = page.evaluate("""
