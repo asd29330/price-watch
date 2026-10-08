@@ -187,76 +187,106 @@ def fetch_qiandao_all(rooms):
             )
             page = context.new_page()
             page.goto(QIandAO_URL, timeout=60000, wait_until="domcontentloaded")
-            time.sleep(5)  # 多等5秒让价格渲染出来
+            time.sleep(8)  # 多等8秒让价格渲染出来
 
-            current_room = "三清山"  # 页面默认打开就是三清山
-            for room in rooms:
-                try:
-                    if room == current_room:
-                        print(f"  [千岛] 当前就在 {room}，直接抓价格")
-                    else:
-                        print(f"  [千岛] 切换到 {room}...")
-                        # 第一步：点击顶部当前区服（不在下拉容器里的那个），打开下拉菜单
-                        page.evaluate(f"""
-                            () => {{
-                                const all = document.querySelectorAll('*');
-                                for (const el of all) {{
-                                    if (el.textContent.trim() === '{current_room}' && el.children.length === 0) {{
-                                        // 排除掉下拉菜单里的元素
-                                        if (!el.closest('.n-base-selection-overlay, [class*="selection-overlay"]')) {{
-                                            el.click();
-                                            return true;
-                                        }}
-                                    }}
-                                }}
-                                return false;
-                            }}
-                        """)
-                        time.sleep(1)
-                        # 第二步：在下拉菜单容器里点击目标区服
-                        page.evaluate(f"""
-                            () => {{
-                                const overlays = document.querySelectorAll('.n-base-selection-overlay, [class*="selection-overlay"]');
-                                for (const overlay of overlays) {{
-                                    const items = overlay.querySelectorAll('*');
-                                    for (const item of items) {{
-                                        if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
-                                            item.click();
-                                            return true;
-                                        }}
-                                    }}
-                                }}
-                                return false;
-                            }}
-                        """)
-                        time.sleep(3)  # 等待价格加载
-                        current_room = room
-
-                    # 提取所有价格
-                    prices = page.evaluate("""
-                        () => {
-                            const all = document.querySelectorAll('*');
-                            const prices = [];
-                            for (const el of all) {
-                                const text = el.textContent || '';
-                                const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
-                                if (m && el.children.length < 3) {
-                                    prices.push(parseFloat(m[1]));
-                                }
+            # 先只抓默认打开的三清山价格，稳定第一
+            room = "三清山"
+            print(f"  [千岛] 抓取默认区服 {room}...")
+            try:
+                # 提取所有价格
+                prices = page.evaluate("""
+                    () => {
+                        const all = document.querySelectorAll('*');
+                        const prices = [];
+                        for (const el of all) {
+                            const text = el.textContent || '';
+                            const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
+                            if (m && el.children.length < 3) {
+                                prices.push(parseFloat(m[1]));
                             }
-                            return prices;
                         }
-                    """)
+                        return prices;
+                    }
+                """)
 
-                    if prices:
-                        min_price = min(prices)
-                        result[room] = min_price
-                        print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
-                    else:
-                        print(f"  [千岛] {room}: 未抓到价格")
-                except Exception as e:
-                    print(f"  [千岛] {room}: 抓取失败 - {e}")
-                time.sleep(1)
+                if prices:
+                    min_price = min(prices)
+                    result[room] = min_price
+                    print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
+                else:
+                    print(f"  [千岛] {room}: 未抓到价格")
+            except Exception as e:
+                print(f"  [千岛] {room}: 抓取失败 - {e}")
+
+            # TODO: 后续再加入其他区服的切换逻辑
+            # current_room = "三清山"  # 页面默认打开就是三清山
+            # for room in rooms:
+            #     try:
+            #         if room == current_room:
+            #             print(f"  [千岛] 当前就在 {room}，直接抓价格")
+            #         else:
+            #             print(f"  [千岛] 切换到 {room}...")
+            #             # 第一步：点击顶部当前区服（不在下拉容器里的那个），打开下拉菜单
+            #             page.evaluate(f"""
+            #                 () => {{
+            #                     const all = document.querySelectorAll('*');
+            #                     for (const el of all) {{
+            #                         if (el.textContent.trim() === '{current_room}' && el.children.length === 0) {{
+            #                             // 排除掉下拉菜单里的元素
+            #                             if (!el.closest('.n-base-selection-overlay, [class*="selection-overlay"]')) {{
+            #                                 el.click();
+            #                                 return true;
+            #                             }}
+            #                         }}
+            #                     }}
+            #                     return false;
+            #                 }}
+            #             """)
+            #             time.sleep(1)
+            #             # 第二步：在下拉菜单容器里点击目标区服
+            #             page.evaluate(f"""
+            #                 () => {{
+            #                     const overlays = document.querySelectorAll('.n-base-selection-overlay, [class*="selection-overlay"]');
+            #                     for (const overlay of overlays) {{
+            #                         const items = overlay.querySelectorAll('*');
+            #                         for (const item of items) {{
+            #                             if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
+            #                                 item.click();
+            #                                 return true;
+            #                             }}
+            #                         }}
+            #                     }}
+            #                     return false;
+            #                 }}
+            #             """)
+            #             time.sleep(3)  # 等待价格加载
+            #             current_room = room
+            #
+            #         # 提取所有价格
+            #         prices = page.evaluate("""
+            #             () => {
+            #                 const all = document.querySelectorAll('*');
+            #                 const prices = [];
+            #                 for (const el of all) {
+            #                     const text = el.textContent || '';
+            #                     const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
+            #                     if (m && el.children.length < 3) {
+            #                         prices.push(parseFloat(m[1]));
+            #                     }
+            #                 }
+            #                 return prices;
+            #             }
+            #         """)
+            #
+            #         if prices:
+            #             min_price = min(prices)
+            #             result[room] = min_price
+            #             print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
+            #         else:
+            #             print(f"  [千岛] {room}: 未抓到价格")
+            #     except Exception as e:
+            #         print(f"  [千岛] {room}: 抓取失败 - {e}")
+            #     time.sleep(1)
 
             browser.close()
     except Exception as e:
