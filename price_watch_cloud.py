@@ -211,7 +211,7 @@ def fetch_qiandao_all(rooms):
                             const prices = [];
                             for (const el of all) {
                                 const text = el.textContent || '';
-                                const m = text.match(/1万币\\s*=\\s*([\\d.]+)\\s*元/);
+                                const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
                                 if (m && el.children.length < 3) {
                                     prices.push(parseFloat(m[1]));
                                 }
