@@ -235,14 +235,14 @@ def run_once():
         except Exception as e:
             print(f"  [dd373] {room}: 抓取失败 - {e}")
 
-    # --- 7881 ---
-    print("  --- 7881 ---")
-    try:
-        prices_7881 = fetch_7881_all(SERVERS)
-        for room, price in prices_7881.items():
-            watched_prices[f"{room}"] = ("7881", price)
-    except Exception as e:
-        print(f"  [7881] 整体失败 - {e}")
+    # --- 7881 暂时关闭（容易超时/反爬）---
+    # print("  --- 7881 ---")
+    # try:
+    #     prices_7881 = fetch_7881_all(SERVERS)
+    #     for room, price in prices_7881.items():
+    #         watched_prices[f"{room}"] = ("7881", price)
+    # except Exception as e:
+    #     print(f"  [7881] 整体失败 - {e}")
 
     return watched_prices
 
