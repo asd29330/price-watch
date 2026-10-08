@@ -192,9 +192,39 @@ def fetch_qiandao_all(rooms):
             for room in rooms:
                 try:
                     print(f"  [千岛] 切换到 {room}...")
-                    # 点击区服选项
-                    page.click(f"text={room}", timeout=5000)
-                    time.sleep(2)  # 等待价格加载
+                    # 先打开区服下拉菜单（点击顶部的区服选择器）
+                    page.evaluate("""
+                        () => {
+                            // 找到顶部显示当前区服的选择器按钮并点击
+                            const selectors = document.querySelectorAll('.n-base-selection, [class*="selection"]');
+                            for (const el of selectors) {
+                                if (el.textContent.trim().length < 10 && el.querySelector('input, .n-base-selection__placeholder, .n-base-selection__value')) {
+                                    el.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+                    """)
+                    time.sleep(1)
+                    
+                    # 在下拉菜单里点击对应的区服
+                    page.evaluate(f"""
+                        () => {{
+                            const overlays = document.querySelectorAll('.n-base-selection-overlay__wrapper, [class*="selection-overlay"]');
+                            for (const overlay of overlays) {{
+                                const items = overlay.querySelectorAll('*');
+                                for (const item of items) {{
+                                    if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
+                                        item.click();
+                                        return true;
+                                    }}
+                                }}
+                            }}
+                            return false;
+                        }}
+                    """)
+                    time.sleep(3)  # 等待价格加载
 
                     # 提取所有价格
                     prices = page.evaluate("""
