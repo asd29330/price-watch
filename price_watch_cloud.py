@@ -196,11 +196,11 @@ def fetch_qiandao_all(rooms):
                         print(f"  [千岛] 当前就在 {room}，直接抓价格")
                     else:
                         print(f"  [千岛] 切换到 {room}...")
-                        # 第一步：点击顶部当前区服，打开下拉菜单
-                        page.get_by_text(current_room, exact=True).first.click(timeout=5000)
+                        # 第一步：点击顶部当前区服，打开下拉菜单（只找可见的，不点隐藏的下拉选项）
+                        page.get_by_text(current_room, exact=True).locator("visible=true").first.click(timeout=5000)
                         time.sleep(1)
-                        # 第二步：在下拉菜单里点击目标区服
-                        page.get_by_text(room, exact=True).first.click(timeout=5000)
+                        # 第二步：在下拉菜单里点击目标区服（这时候下拉是打开的，目标区服是可见的）
+                        page.get_by_text(room, exact=True).locator("visible=true").first.click(timeout=5000)
                         time.sleep(3)  # 等待价格加载
                         current_room = room
 
