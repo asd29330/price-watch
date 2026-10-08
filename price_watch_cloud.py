@@ -160,137 +160,94 @@ def fetch_7881_all(rooms):
     return result
 
 
-# ============ 千岛抓取（Playwright） ============
+# ============ 千岛抓取（API直接请求，不用Playwright） ============
 
-QIandAO_URL = "https://qiandao.com/currency/currency-zone?catalogName=%E9%80%86%E6%B0%B4%E5%AF%92%E4%B8%93%E5%8C%BA&islandId=300692&tagIds=[1883484]&attributeId=904221228984762040&entryId=1883484&entryType=TAG"
+QIandAO_API_URL = "https://api.qiandao.com/c2c-web/v1/currency/spu-list-v2"
+QIandAO_SPU_ID = "1019270210852537580"
+QIandAO_ATTR_KEY = "904221228984762040"
+
+# 区服名 -> API 里的 value
+QIandAO_ROOM_IDS = {
+    "三清山": "324996",
+    "花果山": "3146578",
+    "水帘洞": "3211946",
+    "云樱岛": "324997",
+    "白帝城": "324999",
+    "桃花坞": "324998",
+    "女儿国": "3712269",
+}
 
 
 def fetch_qiandao_all(rooms):
     """
-    用 Playwright 无头浏览器抓取千岛所有区服价格。
+    直接调用千岛API抓取所有区服价格。
     返回 {区服: 最低价}。
     """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("  [千岛] playwright 未安装，跳过千岛监测")
-        return {}
-
+    import json
     result = {}
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
-            context = browser.new_context(
-                user_agent=UA,
-                locale="zh-CN",
-                viewport={"width": 1280, "height": 800},
-            )
-            page = context.new_page()
-            page.goto(QIandAO_URL, timeout=60000, wait_until="domcontentloaded")
-            time.sleep(8)  # 多等8秒让价格渲染出来
+    headers = {
+        "User-Agent": UA,
+        "Content-Type": "application/json",
+        "Referer": "https://qiandao.com/",
+        "Origin": "https://qiandao.com",
+    }
 
-            # 先只抓默认打开的三清山价格，稳定第一
-            room = "三清山"
-            print(f"  [千岛] 抓取默认区服 {room}...")
-            try:
-                # 提取所有价格
-                prices = page.evaluate("""
-                    () => {
-                        const all = document.querySelectorAll('*');
-                        const prices = [];
-                        for (const el of all) {
-                            const text = el.textContent || '';
-                            const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
-                            if (m && el.children.length < 3) {
-                                prices.push(parseFloat(m[1]));
-                            }
-                        }
-                        return prices;
+    for room in rooms:
+        if room not in QIandAO_ROOM_IDS:
+            print(f"  [千岛] {room}: 未配置ID，跳过")
+            continue
+        try:
+            room_id = QIandAO_ROOM_IDS[room]
+            payload = {
+                "spuId": QIandAO_SPU_ID,
+                "offset": 0,
+                "limit": 20,
+                "filters": [{
+                    "key": QIandAO_ATTR_KEY,
+                    "keyType": "ATTRIBUTE",
+                    "filterOperType": "EQ",
+                    "isNot": False,
+                    "selectedQueryValue": {
+                        "candidateType": "SINGLE_VALUE",
+                        "candidateValues": [{"label": room, "value": room_id}]
                     }
-                """)
+                }],
+                "sortBy": "BEST_RATIO"
+            }
+            req = urllib.request.Request(
+                QIandAO_API_URL,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
 
-                if prices:
-                    min_price = min(prices)
-                    result[room] = min_price
-                    print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
-                else:
-                    print(f"  [千岛] {room}: 未抓到价格")
-            except Exception as e:
-                print(f"  [千岛] {room}: 抓取失败 - {e}")
+            # 从返回里提取商品列表
+            items = data.get("data", {}).get("list", [])
+            if not items:
+                print(f"  [千岛] {room}: 无在售商品")
+                continue
 
-            # TODO: 后续再加入其他区服的切换逻辑
-            # current_room = "三清山"  # 页面默认打开就是三清山
-            # for room in rooms:
-            #     try:
-            #         if room == current_room:
-            #             print(f"  [千岛] 当前就在 {room}，直接抓价格")
-            #         else:
-            #             print(f"  [千岛] 切换到 {room}...")
-            #             # 第一步：点击顶部当前区服（不在下拉容器里的那个），打开下拉菜单
-            #             page.evaluate(f"""
-            #                 () => {{
-            #                     const all = document.querySelectorAll('*');
-            #                     for (const el of all) {{
-            #                         if (el.textContent.trim() === '{current_room}' && el.children.length === 0) {{
-            #                             // 排除掉下拉菜单里的元素
-            #                             if (!el.closest('.n-base-selection-overlay, [class*="selection-overlay"]')) {{
-            #                                 el.click();
-            #                                 return true;
-            #                             }}
-            #                         }}
-            #                     }}
-            #                     return false;
-            #                 }}
-            #             """)
-            #             time.sleep(1)
-            #             # 第二步：在下拉菜单容器里点击目标区服
-            #             page.evaluate(f"""
-            #                 () => {{
-            #                     const overlays = document.querySelectorAll('.n-base-selection-overlay, [class*="selection-overlay"]');
-            #                     for (const overlay of overlays) {{
-            #                         const items = overlay.querySelectorAll('*');
-            #                         for (const item of items) {{
-            #                             if (item.textContent.trim() === '{room}' && item.children.length === 0) {{
-            #                                 item.click();
-            #                                 return true;
-            #                             }}
-            #                         }}
-            #                     }}
-            #                     return false;
-            #                 }}
-            #             """)
-            #             time.sleep(3)  # 等待价格加载
-            #             current_room = room
-            #
-            #         # 提取所有价格
-            #         prices = page.evaluate("""
-            #             () => {
-            #                 const all = document.querySelectorAll('*');
-            #                 const prices = [];
-            #                 for (const el of all) {
-            #                     const text = el.textContent || '';
-            #                     const m = text.match(/1\\s*万币\\s*=\\s*([\\d.]+)\\s*元/);
-            #                     if (m && el.children.length < 3) {
-            #                         prices.push(parseFloat(m[1]));
-            #                     }
-            #                 }
-            #                 return prices;
-            #             }
-            #         """)
-            #
-            #         if prices:
-            #             min_price = min(prices)
-            #             result[room] = min_price
-            #             print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
-            #         else:
-            #             print(f"  [千岛] {room}: 未抓到价格")
-            #     except Exception as e:
-            #         print(f"  [千岛] {room}: 抓取失败 - {e}")
-            #     time.sleep(1)
+            # 第一个商品就是比例最佳的最低价
+            # 价格字段应该是 price 或者 unitPrice，单位是元/万币
+            min_price = None
+            for item in items:
+                # 看看价格在哪个字段里
+                price = item.get("price") or item.get("unitPrice") or item.get("minPrice")
+                if price:
+                    min_price = float(price) / 100 if price > 1000 else float(price)  # 可能是分为单位
+                    break
 
-            browser.close()
-    except Exception as e:
-        print(f"  [千岛] 整体失败 - {e}")
+            if min_price:
+                result[room] = min_price
+                print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(items)}条在售）")
+            else:
+                print(f"  [千岛] {room}: 未找到价格字段，返回字段: {list(items[0].keys())}")
+
+        except Exception as e:
+            print(f"  [千岛] {room}: 抓取失败 - {e}")
+
     return result
 
 
