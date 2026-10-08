@@ -181,9 +181,9 @@ QIandAO_ROOM_IDS = {
 
 def fetch_qiandao_playwright(rooms):
     """
-    用 Playwright 加载登录态，让页面自己的 fetch（已被 patch 加签名头）发请求，
-    用 route 拦截绕过浏览器 CORS，拿到真实响应。
-    返回 {区服: 最低价}。
+    用 Playwright 加载登录态。
+    打开 C2C 页面，让 app 自己发带签名头的请求，
+    在 route 拦截时修改请求体为各房间数据，绕过 CORS。
     """
     if not os.path.exists(QIandAO_STORAGE):
         print("  [千岛] 未找到 qiandao_storage_state.json，请先本地运行 qiandao_login.py 登录")
@@ -196,8 +196,8 @@ def fetch_qiandao_playwright(rooms):
         return {}
 
     result = {}
-    # 用来暂存每个房间的 API 响应
-    captured = {}
+    room_queue = [r for r in rooms if r in QIandAO_ROOM_IDS]
+    captured_responses = {}
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
@@ -207,121 +207,114 @@ def fetch_qiandao_playwright(rooms):
             locale="zh-CN",
             viewport={"width": 1280, "height": 800},
         )
-
         page = context.new_page()
 
-        # 拦截 spu-list-v2 请求：用 route.fetch() 绕过 CORS
-        def handle_route(route):
-            try:
-                resp = route.fetch()  # 不经过浏览器 CORS
-                body = resp.text()
-                status = resp.status
-                # 用 post_data 作为 key 存响应
-                post_data = route.request.post_data or ""
-                captured[post_data] = {"status": status, "body": body}
-                route.fulfill(
-                    status=status,
-                    content_type="application/json",
-                    body=body,
-                    headers={"access-control-allow-origin": "*"},
-                )
-            except Exception as e:
-                route.continue_()
+        # 拦截器：第一次 app 发请求时，用我们的房间参数替换 body
+        def make_handler(queue_ref):
+            state = {"count": 0}
+            def handle_route(route):
+                try:
+                    req = route.request
+                    hdrs = {k.lower(): v for k, v in req.headers.items()}
+                    has_sign = "x-request-sign" in hdrs
+                    
+                    if state["count"] < len(queue_ref):
+                        room = queue_ref[state["count"]]
+                        room_id = QIandAO_ROOM_IDS[room]
+                        state["count"] += 1
+                        
+                        payload = {
+                            "spuId": QIandAO_SPU_ID,
+                            "offset": 0, "limit": 20,
+                            "filters": [{
+                                "key": QIandAO_ATTR_KEY, "keyType": "ATTRIBUTE",
+                                "filterOperType": "EQ", "isNot": False,
+                                "selectedQueryValue": {
+                                    "candidateType": "SINGLE_VALUE",
+                                    "candidateValues": [{"label": room, "value": room_id}],
+                                },
+                            }],
+                            "sortBy": "BEST_RATIO",
+                        }
+                        new_body = json.dumps(payload, ensure_ascii=False)
+                        
+                        print(f"  [千岛] 拦截请求 #{state['count']} ({room}), has_sign={has_sign}")
+                        resp = route.fetch(post_data=new_body)
+                        body = resp.text()
+                        captured_responses[room] = {"status": resp.status, "body": body}
+                        route.fulfill(
+                            status=resp.status,
+                            content_type="application/json",
+                            body=body,
+                            headers={"access-control-allow-origin": "*"},
+                        )
+                    else:
+                        # 额外的请求，直接放过
+                        resp = route.fetch()
+                        route.fulfill(response=resp)
+                except Exception as e:
+                    print(f"  [千岛] route error: {e}")
+                    try:
+                        route.continue_()
+                    except:
+                        pass
+            return handle_route
 
-        page.route("**/c2c-web/v1/currency/spu-list-v2", handle_route)
+        handler = make_handler(room_queue)
+        page.route("**/c2c-web/v1/currency/spu-list-v2", handler)
 
-        # 打开 C2C 页面，让 app 初始化并 patch window.fetch
+        # 打开 C2C 页面，触发 app 发签名请求
         try:
             page.goto("https://www.qiandao.com/c2c/spu/1019270210852537580",
-                      wait_until="domcontentloaded", timeout=20000)
-            time.sleep(3)
+                      wait_until="domcontentloaded", timeout=25000)
+            # 等待 app 发请求并被拦截
+            time.sleep(8)
         except Exception as e:
-            print(f"  [千岛] 页面加载警告: {e}")
+            print(f"  [千岛] 页面加载: {e}")
 
-        for room in rooms:
-            if room not in QIandAO_ROOM_IDS:
-                continue
-            room_id = QIandAO_ROOM_IDS[room]
+        # 如果 app 只发了一次请求，我们需要刷新页面触发更多
+        attempts = 0
+        while len(captured_responses) < len(room_queue) and attempts < 6:
+            attempts += 1
             try:
-                payload = {
-                    "spuId": QIandAO_SPU_ID,
-                    "offset": 0, "limit": 20,
-                    "filters": [{
-                        "key": QIandAO_ATTR_KEY, "keyType": "ATTRIBUTE",
-                        "filterOperType": "EQ", "isNot": False,
-                        "selectedQueryValue": {
-                            "candidateType": "SINGLE_VALUE",
-                            "candidateValues": [{"label": room, "value": room_id}],
-                        },
-                    }],
-                    "sortBy": "BEST_RATIO",
-                }
-                post_data = json.dumps(payload, ensure_ascii=False)
+                page.reload(wait_until="domcontentloaded", timeout=15000)
+                time.sleep(5)
+            except:
+                pass
 
-                # 调用页面里已被 patch 的 fetch（会自动加签名头）
-                page.evaluate("""async (args) => {
-                    try {
-                        const r = await fetch(args.url, {
-                            method: "POST",
-                            headers: {"Content-Type": "application/json"},
-                            body: args.body,
-                            credentials: "include",
-                        });
-                        return {status: r.status, ok: r.ok};
-                    } catch(e) {
-                        return {error: e.message};
-                    }
-                }""", {"url": QIandAO_API_URL, "body": post_data})
-
-                time.sleep(1)
-
-                # 从 captured 里找对应响应
-                resp = captured.get(post_data)
-                if not resp:
-                    # 可能 key 不完全匹配，模糊查找
-                    for k, v in captured.items():
-                        if room_id in k:
-                            resp = v
-                            break
-
-                if not resp:
-                    print(f"  [千岛] {room}: 未捕获到响应")
-                    continue
-
-                if resp["status"] != 200:
-                    print(f"  [千岛] {room}: HTTP {resp['status']} - {resp['body'][:120]}")
-                    continue
-
+        # 处理捕获到的响应
+        for room in room_queue:
+            resp = captured_responses.get(room)
+            if not resp:
+                print(f"  [千岛] {room}: 未捕获到响应")
+                continue
+            if resp["status"] != 200:
+                print(f"  [千岛] {room}: HTTP {resp['status']} - {resp['body'][:120]}")
+                continue
+            try:
                 resp_data = json.loads(resp["body"])
                 items = resp_data.get("data", {}).get("list", [])
                 if not items:
                     print(f"  [千岛] {room}: 无在售商品")
                     continue
-
                 prices = []
                 for item in items:
                     price = item.get("price") or item.get("unitPrice") or item.get("minPrice")
                     if price:
                         p = float(price)
                         prices.append(p / 100 if p > 1000 else p)
-
                 if prices:
                     min_price = min(prices)
                     result[room] = min_price
                     print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(items)}条在售）")
                 else:
                     print(f"  [千岛] {room}: 未找到价格字段")
-
             except Exception as e:
-                print(f"  [千岛] {room}: 抓取失败 - {e}")
-
-            time.sleep(1)
+                print(f"  [千岛] {room}: 解析失败 - {e}")
 
         context.close()
         browser.close()
     return result
-
-
 
 # ============ 推送与状态 ============
 
