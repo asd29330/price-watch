@@ -186,8 +186,8 @@ def fetch_qiandao_all(rooms):
                 viewport={"width": 1280, "height": 800},
             )
             page = context.new_page()
-            page.goto(QIandAO_URL, timeout=30000, wait_until="networkidle")
-            time.sleep(3)
+            page.goto(QIandAO_URL, timeout=60000, wait_until="domcontentloaded")
+            time.sleep(5)  # 多等5秒让价格渲染出来
 
             for room in rooms:
                 try:
