@@ -265,7 +265,7 @@ def fetch_qiandao_playwright(rooms):
 
         # 打开 C2C 页面，触发 app 发签名请求
         try:
-            page.goto("https://www.qiandao.com/c2c/spu/1019270210852537580",
+            page.goto("https://www.qiandao.com/island?id=300692",
                       wait_until="domcontentloaded", timeout=25000)
             # 等待 app 发请求并被拦截
             time.sleep(8)
@@ -277,7 +277,7 @@ def fetch_qiandao_playwright(rooms):
         while len(captured_responses) < len(room_queue) and attempts < 6:
             attempts += 1
             try:
-                page.reload(wait_until="domcontentloaded", timeout=15000)
+                page.goto("https://www.qiandao.com/island?id=300692", wait_until="domcontentloaded", timeout=15000)
                 time.sleep(5)
             except:
                 pass
