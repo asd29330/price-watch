@@ -160,6 +160,74 @@ def fetch_7881_all(rooms):
     return result
 
 
+# ============ 千岛抓取（Playwright） ============
+
+QIandAO_URL = "https://qiandao.com/currency/currency-zone?catalogName=%E9%80%86%E6%B0%B4%E5%AF%92%E4%B8%93%E5%8C%BA&islandId=300692&tagIds=[1883484]&attributeId=904221228984762040&entryId=1883484&entryType=TAG"
+
+
+def fetch_qiandao_all(rooms):
+    """
+    用 Playwright 无头浏览器抓取千岛所有区服价格。
+    返回 {区服: 最低价}。
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  [千岛] playwright 未安装，跳过千岛监测")
+        return {}
+
+    result = {}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+            context = browser.new_context(
+                user_agent=UA,
+                locale="zh-CN",
+                viewport={"width": 1280, "height": 800},
+            )
+            page = context.new_page()
+            page.goto(QIandAO_URL, timeout=30000, wait_until="networkidle")
+            time.sleep(3)
+
+            for room in rooms:
+                try:
+                    print(f"  [千岛] 切换到 {room}...")
+                    # 点击区服选项
+                    page.click(f"text={room}", timeout=5000)
+                    time.sleep(2)  # 等待价格加载
+
+                    # 提取所有价格
+                    prices = page.evaluate("""
+                        () => {
+                            const all = document.querySelectorAll('*');
+                            const prices = [];
+                            for (const el of all) {
+                                const text = el.textContent || '';
+                                const m = text.match(/1万币\\s*=\\s*([\\d.]+)\\s*元/);
+                                if (m && el.children.length < 3) {
+                                    prices.push(parseFloat(m[1]));
+                                }
+                            }
+                            return prices;
+                        }
+                    """)
+
+                    if prices:
+                        min_price = min(prices)
+                        result[room] = min_price
+                        print(f"  [千岛] {room}: 最低价 {min_price:.4f} 元/万币（{len(prices)}条）")
+                    else:
+                        print(f"  [千岛] {room}: 未抓到价格")
+                except Exception as e:
+                    print(f"  [千岛] {room}: 抓取失败 - {e}")
+                time.sleep(1)
+
+            browser.close()
+    except Exception as e:
+        print(f"  [千岛] 整体失败 - {e}")
+    return result
+
+
 # ============ 推送与状态 ============
 
 def get_bark_urls():
@@ -243,6 +311,17 @@ def run_once():
     #         watched_prices[f"{room}"] = ("7881", price)
     # except Exception as e:
     #     print(f"  [7881] 整体失败 - {e}")
+
+    # --- 千岛 ---
+    print("  --- 千岛 ---")
+    try:
+        prices_qiandao = fetch_qiandao_all(SERVERS)
+        for room, price in prices_qiandao.items():
+            # 如果千岛价格更便宜，或者 dd373 没抓到，就更新
+            if room not in watched_prices or price < watched_prices[room][1]:
+                watched_prices[room] = ("千岛", price)
+    except Exception as e:
+        print(f"  [千岛] 整体失败 - {e}")
 
     return watched_prices
 
