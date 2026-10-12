@@ -58,11 +58,13 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_wat
 # ============ dd373 抓取（直接 requests） ============
 
 def parse_dd373(html):
-    """从 dd373 HTML 解析最低单价（元/万铜钱），返回 (最低价, 商品数) 或 (None, 0)"""
+    """从 dd373 HTML 解析最低单价（元/万铜钱），返回 (最低价, 商品数, 最低价档挂单铜钱万数) 或 (None, 0, 0)"""
     items = re.split(r'<div class="goods-list-item">', html)[1:]
     if not items:
-        return None, 0
+        return None, 0, 0
     prices = []
+    best_price = None
+    best_amount = 0
     for item in items:
         title_m = re.search(r'goods-list-title[^>]*>.*?<div[^>]*>(.*?)</div>', item, re.DOTALL)
         if not title_m:
@@ -75,10 +77,14 @@ def parse_dd373(html):
         total_price = float(pm.group(2).replace(',', ''))
         if amount_wan <= 0:
             continue
-        prices.append(total_price / amount_wan)
+        price = total_price / amount_wan
+        prices.append(price)
+        if best_price is None or price < best_price:
+            best_price = price
+            best_amount = amount_wan
     if not prices:
-        return None, 0
-    return min(prices), len(prices)
+        return None, 0, 0
+    return best_price, len(prices), best_amount
 
 
 def fetch_direct(url, timeout=15):
@@ -239,12 +245,13 @@ def run_once():
                 continue
             print(f"  [dd373] 抓取 {room}...")
             html = fetch_direct(url)
-            price, count = parse_dd373(html)
+            price, count, amount = parse_dd373(html)
             if not price:
                 print(f"  [dd373] {room}: 未抓到价格")
                 continue
-            print(f"  [dd373] {room}: {price:.4f} 元/万铜钱（{count}条）")
-            watched_prices[f"{room}"] = ("dd373", price)
+            amt_str = f"，在售 {amount:.2f} 万铜钱" if amount > 0 else ""
+            print(f"  [dd373] {room}: {price:.4f} 元/万铜钱（{count}条{amt_str}）")
+            watched_prices[f"{room}"] = ("dd373", price, amount)
         except Exception as e:
             print(f"  [dd373] {room}: 抓取失败 - {e}")
 
@@ -253,7 +260,7 @@ def run_once():
     # try:
     #     prices_7881 = fetch_7881_all(SERVERS)
     #     for room, price in prices_7881.items():
-    #         watched_prices[f"{room}"] = ("7881", price)
+    #         watched_prices[f"{room}"] = ("7881", price, 0)
     # except Exception as e:
     #     print(f"  [7881] 整体失败 - {e}")
 
@@ -263,7 +270,7 @@ def run_once():
         prices_qiandao = fetch_qiandao_playwright(SERVERS)
         for room, price in prices_qiandao.items():
             if room not in watched_prices or price < watched_prices[room][1]:
-                watched_prices[room] = ("千岛", price)
+                watched_prices[room] = ("千岛", price, 0)
     except Exception as e:
         print(f"  [千岛] 整体失败 - {e}")
 
@@ -279,11 +286,13 @@ def handle_watched(watched_prices):
 
     lines = [f"当前行情（共 {len(sorted_items)} 条报价）："]
     below_count = 0
-    for label, (site, price) in sorted_items:
+    for label, (site, price, *rest) in sorted_items:
+        amount = rest[0] if rest else 0
+        amt_str = f"（该档在售 {amount:.2f} 万铜钱）" if amount > 0 else ""
         below = " ⚠️跌破阈值" if price < THRESHOLD else ""
         if price < THRESHOLD:
             below_count += 1
-        lines.append(f"【{site}】{label}  {price:.4f} 元{below}")
+        lines.append(f"【{site}】{label}  {price:.4f} 元{amt_str}{below}")
 
     lines.append(f"\n阈值：{THRESHOLD} 元")
     body = "\n".join(lines)
