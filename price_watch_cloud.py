@@ -20,7 +20,7 @@ import urllib.request
 # ============ 配置区 ============
 THRESHOLD   = 4.4
 CHECK_EVERY = 300
-SERVERS     = ["女儿国", "花果山", "水帘洞", "三清山", "云樱岛", "白帝城", "桃花坞"，“昆仑墟”]
+SERVERS     = ["女儿国", "花果山", "水帘洞", "三清山", "云樱岛", "白帝城", "桃花坞","昆仑墟"]
 
 BARK_URLS = [
     "https://api.day.app/在这里填你的Bark推送地址",
