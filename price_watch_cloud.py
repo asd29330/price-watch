@@ -35,6 +35,7 @@ DD373_SERVER_URLS = {
     "三清山": "https://www.dd373.com/s-xu9np3-h3x9gf-0fqqtp-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
     "云樱岛": "https://www.dd373.com/s-xu9np3-h3x9gf-506c7t-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
     "白帝城": "https://www.dd373.com/s-xu9np3-h3x9gf-67nuq0-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
+    "昆仑墟": "https://www.dd373.com/s-xu9np3-h3x9gf-cwe0qp-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
     "桃花坞": "https://www.dd373.com/s-xu9np3-h3x9gf-5uuvn9-0-0-0-wdxrjj-0-0-0-0-0-1-0-5-0.html",
 }
 
