@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 逆水寒黄金畅玩服 铜钱价格盯价脚本（GitHub Actions + Bark 推送版）
-- dd373: 直接 requests 抓取
-- 7881: Playwright 无头浏览器渲染后抓取（API 有签名校验，不能直接请求）
+- dd373: Playwright 无头浏览器渲染后抓取（裸请求会被 WAF 验证码页拦截）
+- 7881: Playwright 无头浏览器渲染后抓取（API 有签名校验，不能直接请求，当前停用）
 """
 
 import argparse
@@ -103,6 +103,50 @@ def fetch_direct(url, timeout=15):
         if resp.headers.get("Content-Encoding") == "gzip":
             data = gzip.decompress(data)
         return data.decode("utf-8", errors="ignore")
+
+
+# ============ dd373 抓取（Playwright 渲染，绕过裸请求 WAF 验证码页） ============
+
+def fetch_dd373_playwright(rooms):
+    """用 Playwright 渲染 dd373 搜索页后取 HTML，再走 parse_dd373 解析。
+    返回 {区服: (price, amount, count)}；失败或未抓到返回空字典。"""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  [dd373] playwright 未安装，跳过 dd373 监测")
+        return {}
+
+    result = {}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+        context = browser.new_context(
+            user_agent=UA,
+            locale="zh-CN",
+            viewport={"width": 1280, "height": 800},
+        )
+        page = context.new_page()
+
+        for room in rooms:
+            url = DD373_SERVER_URLS.get(room)
+            if not url:
+                continue
+            try:
+                print(f"  [dd373] 抓取 {room}...")
+                page.goto(url, timeout=30000, wait_until="networkidle")
+                time.sleep(3)  # 等待商品列表渲染
+                html = page.content()
+                price, count, amount = parse_dd373(html)
+                if price:
+                    result[room] = (price, amount, count)
+                    print(f"  [dd373] {room}: {price:.4f} 元/万铜钱（{count}条，在售 {amount:.2f} 万铜钱）")
+                else:
+                    print(f"  [dd373] {room}: 未抓到价格")
+            except Exception as e:
+                print(f"  [dd373] {room}: 抓取失败 - {e}")
+            time.sleep(3)
+
+        browser.close()
+    return result
 
 
 # ============ 7881 抓取（Playwright） ============
@@ -235,26 +279,14 @@ def run_once():
     print(f"\n[{ts}] 巡检中...")
     watched_prices = {}
 
-    # --- dd373 ---
+    # --- dd373（Playwright 渲染，绕过裸请求 WAF 拦截）---
     print("  --- dd373 ---")
-    for idx, room in enumerate(SERVERS):
-        try:
-            if idx > 0:
-                time.sleep(3)
-            url = DD373_SERVER_URLS.get(room)
-            if not url:
-                continue
-            print(f"  [dd373] 抓取 {room}...")
-            html = fetch_direct(url)
-            price, count, amount = parse_dd373(html)
-            if not price:
-                print(f"  [dd373] {room}: 未抓到价格")
-                continue
-            amt_str = f"，在售 {amount:.2f} 万铜钱" if amount > 0 else ""
-            print(f"  [dd373] {room}: {price:.4f} 元/万铜钱（{count}条{amt_str}）")
+    try:
+        dd373_data = fetch_dd373_playwright(SERVERS)
+        for room, (price, amount, count) in dd373_data.items():
             watched_prices[f"{room}"] = ("dd373", price, amount)
-        except Exception as e:
-            print(f"  [dd373] {room}: 抓取失败 - {e}")
+    except Exception as e:
+        print(f"  [dd373] 整体失败 - {e}")
 
     # --- 7881 暂时关闭（容易超时/反爬）---
     # print("  --- 7881 ---")
