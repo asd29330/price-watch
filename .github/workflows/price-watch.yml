@@ -1,6 +1,9 @@
 name: Price Watch
 
 on:
+  schedule:
+    # 每 5 分钟跑一次（UTC 时间，GitHub cron 以 UTC 计）
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 concurrency:
